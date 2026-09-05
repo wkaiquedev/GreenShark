@@ -8,6 +8,7 @@ import com.greenshark.action.PacketActions;
 import com.greenshark.inspect.PacketInspector;
 import com.greenshark.model.CapturedPacket;
 import com.greenshark.model.Direction;
+import com.greenshark.model.Favorites;
 import com.greenshark.model.PacketLog;
 import com.greenshark.net.HeldPacket;
 import com.greenshark.net.InterceptQueue;
@@ -24,12 +25,21 @@ import org.lwjgl.glfw.GLFW;
 /** Tela principal estilo Burp: lista de pacotes, inspeção, replay e edição. */
 public class InterceptorScreen extends Screen {
 
+    /** Aba ativa: 0 = Captura (ao vivo), 1 = Favoritos. Persiste entre aberturas. */
+    private static int activeTab = 0;
+
     private TextFieldWidget filterField;
     private String filter = "";
     private double scroll = 0;
     private long selectedId = -1;
     private List<CapturedPacket> view = new ArrayList<>();
     private boolean renderErrorLogged = false;
+
+    // Bandas verticais do layout (evita título/status/botões colados).
+    private static final int TITLE_Y = 8;
+    private static final int STATUS_Y = 20;
+    private static final int CONTROLS_Y = 34;
+    private static final int TABS_Y = 60;
 
     public InterceptorScreen() {
         super(Text.literal("GreenShark — Interceptador"));
@@ -44,11 +54,15 @@ public class InterceptorScreen extends Screen {
     }
 
     private int listTop() {
-        return 62;
+        return 84;
     }
 
     private int listBottom() {
-        return this.height - 44;
+        return this.height - 52;
+    }
+
+    private int actionY() {
+        return this.height - 30;
     }
 
     private int rowH() {
@@ -57,7 +71,8 @@ public class InterceptorScreen extends Screen {
 
     @Override
     protected void init() {
-        int y = 30;
+        // ── Linha de controles ──────────────────────────────────────────
+        int cy = CONTROLS_Y;
         addDrawableChild(ButtonWidget.builder(
                         Text.literal("Intercept S→C: " + onoff(PacketInterceptor.interceptInbound)),
                         b -> {
@@ -67,7 +82,7 @@ public class InterceptorScreen extends Screen {
                             }
                             clearAndInit();
                         })
-                .dimensions(8, y, 138, 20).build());
+                .dimensions(8, cy, 138, 20).build());
         addDrawableChild(ButtonWidget.builder(
                         Text.literal("Intercept C→S: " + onoff(PacketInterceptor.interceptOutbound)),
                         b -> {
@@ -77,47 +92,74 @@ public class InterceptorScreen extends Screen {
                             }
                             clearAndInit();
                         })
-                .dimensions(150, y, 138, 20).build());
+                .dimensions(150, cy, 138, 20).build());
         addDrawableChild(ButtonWidget.builder(
                         Text.literal(PacketLog.INSTANCE.isCapturing() ? "Captura: §aON" : "Captura: §7OFF"),
                         b -> {
                             PacketLog.INSTANCE.setCapturing(!PacketLog.INSTANCE.isCapturing());
                             clearAndInit();
                         })
-                .dimensions(292, y, 96, 20).build());
+                .dimensions(292, cy, 96, 20).build());
         addDrawableChild(ButtonWidget.builder(Text.literal("Limpar"),
                         b -> {
-                            PacketLog.INSTANCE.clear();
+                            if (activeTab == 1) {
+                                Favorites.INSTANCE.clear();
+                            } else {
+                                PacketLog.INSTANCE.clear();
+                            }
                             selectedId = -1;
+                            clearAndInit();
                         })
-                .dimensions(392, y, 58, 20).build());
+                .dimensions(392, cy, 58, 20).build());
         addDrawableChild(ButtonWidget.builder(
                         Text.literal("Modo: " + modeLabel()),
                         b -> {
                             PacketInterceptor.captureMode = (PacketInterceptor.captureMode + 1) % 3;
                             clearAndInit();
                         })
-                .dimensions(454, y, 130, 20).build());
+                .dimensions(454, cy, 130, 20).build());
 
-        filterField = new TextFieldWidget(this.textRenderer, listX(), listTop() - 18, listW(), 14,
-                Text.literal("filtro"));
+        // ── Abas + filtro ───────────────────────────────────────────────
+        int ty = TABS_Y;
+        addDrawableChild(ButtonWidget.builder(
+                        Text.literal(activeTab == 0 ? "§f● Captura" : "§7Captura"),
+                        b -> {
+                            activeTab = 0;
+                            selectedId = -1;
+                            clearAndInit();
+                        })
+                .dimensions(8, ty, 92, 16).build());
+        addDrawableChild(ButtonWidget.builder(
+                        Text.literal((activeTab == 1 ? "§e● " : "§7") + "★ Favoritos (" + Favorites.INSTANCE.size() + ")"),
+                        b -> {
+                            activeTab = 1;
+                            selectedId = -1;
+                            clearAndInit();
+                        })
+                .dimensions(104, ty, 124, 16).build());
+
+        int fx = 234;
+        int fw = Math.max(80, listX() + listW() - fx);
+        filterField = new TextFieldWidget(this.textRenderer, fx, ty, fw, 16, Text.literal("filtro"));
         filterField.setText(filter);
         filterField.setPlaceholder(Text.literal("filtrar por nome…"));
         filterField.setChangedListener(s -> filter = s);
         addDrawableChild(filterField);
 
-        // Ações do pacote selecionado (lado direito, base).
+        // ── Ações do pacote selecionado (lado direito, base) ────────────
         int rx = this.width / 2 + 8;
         int rw = this.width - rx - 8;
-        int third = (rw - 12) / 3;
+        int q = (rw - 18) / 4;
         addDrawableChild(ButtonWidget.builder(Text.literal("Repetir"), b -> doReplay())
-                .dimensions(rx, this.height - 34, third, 20).build());
-        addDrawableChild(ButtonWidget.builder(Text.literal("Repetir §c20×"), b -> doReplay20())
-                .dimensions(rx + third + 6, this.height - 34, third, 20).build());
+                .dimensions(rx, actionY(), q, 20).build());
+        addDrawableChild(ButtonWidget.builder(Text.literal("Rep. §c20×"), b -> doReplay20())
+                .dimensions(rx + (q + 6), actionY(), q, 20).build());
         addDrawableChild(ButtonWidget.builder(Text.literal("Editar"), b -> doEdit())
-                .dimensions(rx + 2 * (third + 6), this.height - 34, third, 20).build());
+                .dimensions(rx + 2 * (q + 6), actionY(), q, 20).build());
+        addDrawableChild(ButtonWidget.builder(Text.literal("§e★§r Fav"), b -> doFav())
+                .dimensions(rx + 3 * (q + 6), actionY(), q, 20).build());
 
-        // Controles de pacote segurado (intercept).
+        // ── Controles de pacote segurado (intercept) ────────────────────
         HeldPacket held = InterceptQueue.INSTANCE.peek();
         if (held != null) {
             addDrawableChild(ButtonWidget.builder(Text.literal("§aEncaminhar [F]"),
@@ -128,7 +170,7 @@ public class InterceptorScreen extends Screen {
                                 }
                                 clearAndInit();
                             })
-                    .dimensions(8, this.height - 34, 120, 20).build());
+                    .dimensions(8, actionY(), 120, 20).build());
             addDrawableChild(ButtonWidget.builder(Text.literal("§cDescartar [X]"),
                             b -> {
                                 HeldPacket h = InterceptQueue.INSTANCE.poll();
@@ -137,10 +179,10 @@ public class InterceptorScreen extends Screen {
                                 }
                                 clearAndInit();
                             })
-                    .dimensions(132, this.height - 34, 120, 20).build());
+                    .dimensions(132, actionY(), 120, 20).build());
             addDrawableChild(ButtonWidget.builder(Text.literal("Editar & encaminhar"),
                             b -> editHeld())
-                    .dimensions(256, this.height - 34, 150, 20).build());
+                    .dimensions(256, actionY(), 150, 20).build());
         }
     }
 
@@ -160,7 +202,9 @@ public class InterceptorScreen extends Screen {
     }
 
     private List<CapturedPacket> computeView() {
-        List<CapturedPacket> all = PacketLog.INSTANCE.snapshot();
+        List<CapturedPacket> all = (activeTab == 1)
+                ? Favorites.INSTANCE.snapshot()
+                : PacketLog.INSTANCE.snapshot();
         String f = filter.toLowerCase(Locale.ROOT);
         List<CapturedPacket> out = new ArrayList<>();
         // Percorre do mais novo para o mais antigo: o pacote recém-capturado
@@ -202,6 +246,18 @@ public class InterceptorScreen extends Screen {
         }
         boolean ok = PacketActions.replayTimes(p, 20);
         toast(ok ? "Replay 20× enviado: " + p.name : "§cFalha no replay (sem conexão).");
+    }
+
+    private void doFav() {
+        CapturedPacket p = selected();
+        if (p == null) {
+            toast("§7Selecione um pacote primeiro.");
+            return;
+        }
+        Favorites.INSTANCE.toggle(p);
+        boolean now = Favorites.INSTANCE.contains(p.id);
+        toast(now ? "§e★§f Favoritado: " + p.name : "§7Removido dos favoritos: " + p.name);
+        clearAndInit();
     }
 
     private void doEdit() {
@@ -306,11 +362,13 @@ public class InterceptorScreen extends Screen {
         super.render(ctx, mouseX, mouseY, delta);
 
         try {
-        ctx.drawTextWithShadow(this.textRenderer, this.title, 8, 10, 0xFF55FF55);
+        ctx.drawTextWithShadow(this.textRenderer, this.title, 8, TITLE_Y, 0xFF55FF55);
         int heldCount = InterceptQueue.INSTANCE.size();
-        String status = "Total: " + PacketLog.INSTANCE.size() + "   Exibindo: " + view.size()
+        String srcLabel = (activeTab == 1) ? "Favoritos" : "Total";
+        int srcCount = (activeTab == 1) ? Favorites.INSTANCE.size() : PacketLog.INSTANCE.size();
+        String status = srcLabel + ": " + srcCount + "   Exibindo: " + view.size()
                 + (heldCount > 0 ? "   §cSEGURADOS: " + heldCount : "");
-        ctx.drawTextWithShadow(this.textRenderer, Text.literal("§7" + status), 8, 20, 0xFFFFFFFF);
+        ctx.drawTextWithShadow(this.textRenderer, Text.literal("§7" + status), 8, STATUS_Y, 0xFFFFFFFF);
 
         // Painel da lista.
         ctx.fill(listX() - 2, listTop() - 2, listX() + listW() + 2, listBottom() + 2, 0x88000000);
@@ -322,7 +380,8 @@ public class InterceptorScreen extends Screen {
                     ctx.fill(listX(), y, listX() + listW(), y + rowH(), 0x804CAF50);
                 }
                 int color = p.direction == Direction.CLIENTBOUND ? 0xFF7FB0FF : 0xFFFFC77F;
-                String line = "#" + p.id + " " + p.direction.arrow + " " + p.name;
+                String star = Favorites.INSTANCE.contains(p.id) ? "★ " : "";
+                String line = star + "#" + p.id + " " + p.direction.arrow + " " + p.name;
                 ctx.drawText(this.textRenderer, this.textRenderer.trimToWidth(line, listW() - 6),
                         listX() + 3, y + 2, color, false);
             }

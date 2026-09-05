@@ -3,7 +3,6 @@ package com.greenshark.gui;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
-import java.util.Set;
 
 import com.greenshark.action.PacketActions;
 import com.greenshark.inspect.PacketInspector;
@@ -25,17 +24,8 @@ import org.lwjgl.glfw.GLFW;
 /** Tela principal estilo Burp: lista de pacotes, inspeção, replay e edição. */
 public class InterceptorScreen extends Screen {
 
-    // Substrings de nomes de classe considerados "ruído" (alto volume).
-    private static final Set<String> NOISE = Set.of(
-            "PlayerMoveC2SPacket", "EntityS2CPacket", "EntityPositionS2CPacket",
-            "EntityVelocityUpdateS2CPacket", "EntitySetHeadYawS2CPacket",
-            "KeepAlive", "ChunkData", "LightUpdate", "ChunkDeltaUpdate",
-            "EntityTrackerUpdateS2CPacket", "ParticleS2CPacket", "CommonPingS2CPacket",
-            "UpdateTime", "EntityAttributesS2CPacket");
-
     private TextFieldWidget filterField;
     private String filter = "";
-    private boolean hideNoise = true;
     private double scroll = 0;
     private long selectedId = -1;
     private List<CapturedPacket> view = new ArrayList<>();
@@ -102,9 +92,9 @@ public class InterceptorScreen extends Screen {
                         })
                 .dimensions(392, y, 58, 20).build());
         addDrawableChild(ButtonWidget.builder(
-                        Text.literal(hideNoise ? "Ruído: §7oculto" : "Ruído: §avisível"),
+                        Text.literal(PacketInterceptor.dropNoise ? "Ruído: §7oculto" : "Ruído: §avisível"),
                         b -> {
-                            hideNoise = !hideNoise;
+                            PacketInterceptor.dropNoise = !PacketInterceptor.dropNoise;
                             clearAndInit();
                         })
                 .dimensions(454, y, 110, 20).build());
@@ -150,10 +140,6 @@ public class InterceptorScreen extends Screen {
                             b -> editHeld())
                     .dimensions(256, this.height - 34, 150, 20).build());
         }
-
-        com.greenshark.GreenSharkClient.LOGGER.info(
-                "[GreenShark][diag] GUI aberta: PacketLog.size={} capturing={} view(após filtro)={}",
-                PacketLog.INSTANCE.size(), PacketLog.INSTANCE.isCapturing(), computeView().size());
     }
 
     private String onoff(boolean b) {
@@ -168,24 +154,12 @@ public class InterceptorScreen extends Screen {
         // aparece no TOPO da lista (como um console de rede).
         for (int i = all.size() - 1; i >= 0; i--) {
             CapturedPacket p = all.get(i);
-            if (hideNoise && isNoise(p.className)) {
-                continue;
-            }
             if (!f.isEmpty() && !p.name.toLowerCase(Locale.ROOT).contains(f)) {
                 continue;
             }
             out.add(p);
         }
         return out;
-    }
-
-    private boolean isNoise(String className) {
-        for (String n : NOISE) {
-            if (className.contains(n)) {
-                return true;
-            }
-        }
-        return false;
     }
 
     private CapturedPacket selected() {

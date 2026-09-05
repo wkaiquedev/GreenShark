@@ -29,14 +29,30 @@ public class PacketInterceptor extends ChannelDuplexHandler {
     /** Segurar pacotes enviados (cliente -> servidor). */
     public static volatile boolean interceptOutbound = false;
 
-    /** Diagnóstico: conta quantos pacotes o handler realmente viu. */
-    private static final java.util.concurrent.atomic.AtomicLong seen = new java.util.concurrent.atomic.AtomicLong();
+    /** Não capturar (nem segurar) pacotes de alto volume (movimento, chunk, tempo…). */
+    public static volatile boolean dropNoise = true;
 
-    private static void diag(Direction dir, Packet<?> p) {
-        long n = seen.incrementAndGet();
-        if (n <= 6 || n % 500 == 0) {
-            GreenSharkClient.LOGGER.info("[GreenShark][diag] handler viu #{} {} {} | PacketLog.size={} capturing={}",
-                    n, dir, p.getClass().getName(), PacketLog.INSTANCE.size(), PacketLog.INSTANCE.isCapturing());
+    /** DIAGNÓSTICO TEMPORÁRIO: histograma de todos os pacotes vistos (antes de filtrar). */
+    private static final java.util.concurrent.ConcurrentHashMap<String, java.util.concurrent.atomic.AtomicLong> HIST =
+            new java.util.concurrent.ConcurrentHashMap<>();
+    private static final java.util.concurrent.atomic.AtomicLong TOTAL = new java.util.concurrent.atomic.AtomicLong();
+
+    private static void tally(Packet<?> p) {
+        String friendly = null;
+        try {
+            friendly = com.greenshark.inspect.PacketNames.friendly(p);
+        } catch (Throwable ignored) {
+        }
+        String key = (friendly != null ? friendly + "  " : "") + p.getClass().getName();
+        HIST.computeIfAbsent(key, k -> new java.util.concurrent.atomic.AtomicLong()).incrementAndGet();
+        long t = TOTAL.incrementAndGet();
+        if (t % 3000 == 0) {
+            String top = HIST.entrySet().stream()
+                    .sorted((a, b) -> Long.compare(b.getValue().get(), a.getValue().get()))
+                    .limit(18)
+                    .map(e -> String.format("%7d  %s", e.getValue().get(), e.getKey()))
+                    .reduce((a, b) -> a + "\n  " + b).orElse("(vazio)");
+            GreenSharkClient.LOGGER.info("[GreenShark][hist] TOP pacotes (total visto={}):\n  {}", t, top);
         }
     }
 
@@ -54,11 +70,13 @@ public class PacketInterceptor extends ChannelDuplexHandler {
 
     @Override
     public void channelRead(ChannelHandlerContext ctx, Object msg) throws Exception {
-        if (msg instanceof Packet<?> packet) {
+        if (msg instanceof Packet<?> pk) {
+            tally(pk);
+        }
+        if (msg instanceof Packet<?> packet && !(dropNoise && com.greenshark.inspect.PacketNames.isNoise(packet))) {
             try {
                 long id = PacketLog.INSTANCE.nextId();
                 PacketLog.INSTANCE.add(new CapturedPacket(id, Direction.CLIENTBOUND, packet));
-                diag(Direction.CLIENTBOUND, packet);
                 if (interceptInbound && !isCritical(packet)) {
                     InterceptQueue.INSTANCE.hold(new HeldPacket(id, Direction.CLIENTBOUND, packet, ctx, null));
                     return; // segurado de propósito; encaminhado depois pela GUI
@@ -72,11 +90,13 @@ public class PacketInterceptor extends ChannelDuplexHandler {
 
     @Override
     public void write(ChannelHandlerContext ctx, Object msg, ChannelPromise promise) throws Exception {
-        if (msg instanceof Packet<?> packet) {
+        if (msg instanceof Packet<?> pk) {
+            tally(pk);
+        }
+        if (msg instanceof Packet<?> packet && !(dropNoise && com.greenshark.inspect.PacketNames.isNoise(packet))) {
             try {
                 long id = PacketLog.INSTANCE.nextId();
                 PacketLog.INSTANCE.add(new CapturedPacket(id, Direction.SERVERBOUND, packet));
-                diag(Direction.SERVERBOUND, packet);
                 if (interceptOutbound && !isCritical(packet)) {
                     InterceptQueue.INSTANCE.hold(new HeldPacket(id, Direction.SERVERBOUND, packet, ctx, promise));
                     return; // segurado de propósito; encaminhado depois pela GUI

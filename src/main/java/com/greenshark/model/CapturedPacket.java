@@ -28,6 +28,13 @@ public class CapturedPacket {
         }
         this.className = cn;
 
+        String friendly = null;
+        try {
+            friendly = com.greenshark.inspect.PacketNames.friendly(packet);
+        } catch (Throwable ignored) {
+            // cai no nome da classe
+        }
+
         String simple;
         try {
             simple = c.getSimpleName();
@@ -39,6 +46,6 @@ public class CapturedPacket {
         } catch (Throwable t) {
             simple = cn;
         }
-        this.name = simple;
+        this.name = friendly != null ? friendly : simple;
     }
 }

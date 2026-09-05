@@ -1,0 +1,18 @@
+# Gradle / Loom
+.gradle/
+build/
+run/
+remappedSrc/
+*.log
+
+# IDE
+.idea/
+*.iml
+.vscode/
+.settings/
+.classpath
+.project
+bin/
+
+# Sistema
+.DS_Store

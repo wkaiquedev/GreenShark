@@ -1,0 +1,28 @@
+{
+  "schemaVersion": 1,
+  "id": "greenshark",
+  "version": "${version}",
+  "name": "GreenShark",
+  "description": "Interceptador de pacotes estilo Burp Suite para Minecraft Java (Fabric). Visualize, edite e repita pacotes de rede em tempo real, dentro do jogo.",
+  "authors": [
+    "kleberth"
+  ],
+  "contact": {},
+  "license": "MIT",
+  "icon": "assets/greenshark/icon.png",
+  "environment": "client",
+  "entrypoints": {
+    "client": [
+      "com.greenshark.GreenSharkClient"
+    ]
+  },
+  "mixins": [
+    "greenshark.mixins.json"
+  ],
+  "depends": {
+    "fabricloader": ">=0.16.0",
+    "minecraft": "~1.21.11",
+    "java": ">=21",
+    "fabric-api": "*"
+  }
+}

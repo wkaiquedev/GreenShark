@@ -14,16 +14,20 @@ import net.minecraft.network.packet.c2s.play.PlayerActionC2SPacket;
 import net.minecraft.network.packet.c2s.play.PlayerInteractBlockC2SPacket;
 import net.minecraft.network.packet.c2s.play.PlayerInteractEntityC2SPacket;
 import net.minecraft.network.packet.c2s.play.PlayerInteractItemC2SPacket;
+import net.minecraft.network.packet.c2s.play.ClientTickEndC2SPacket;
 import net.minecraft.network.packet.c2s.play.PlayerMoveC2SPacket;
 import net.minecraft.network.packet.c2s.play.RenameItemC2SPacket;
 import net.minecraft.network.packet.c2s.play.UpdateSignC2SPacket;
 import net.minecraft.network.packet.s2c.common.CommonPingS2CPacket;
 import net.minecraft.network.packet.s2c.common.CustomPayloadS2CPacket;
 import net.minecraft.network.packet.s2c.common.KeepAliveS2CPacket;
+import net.minecraft.network.packet.s2c.play.BlockBreakingProgressS2CPacket;
+import net.minecraft.network.packet.s2c.play.BossBarS2CPacket;
 import net.minecraft.network.packet.s2c.play.ChunkDataS2CPacket;
 import net.minecraft.network.packet.s2c.play.ChunkDeltaUpdateS2CPacket;
 import net.minecraft.network.packet.s2c.play.ChunkRenderDistanceCenterS2CPacket;
 import net.minecraft.network.packet.s2c.play.CloseScreenS2CPacket;
+import net.minecraft.network.packet.s2c.play.EntityPassengersSetS2CPacket;
 import net.minecraft.network.packet.s2c.play.EntityAttributesS2CPacket;
 import net.minecraft.network.packet.s2c.play.EntityDamageS2CPacket;
 import net.minecraft.network.packet.s2c.play.EntityPositionS2CPacket;
@@ -40,6 +44,7 @@ import net.minecraft.network.packet.s2c.play.OpenScreenS2CPacket;
 import net.minecraft.network.packet.s2c.play.ParticleS2CPacket;
 import net.minecraft.network.packet.s2c.play.PlayerListHeaderS2CPacket;
 import net.minecraft.network.packet.s2c.play.PlayerListS2CPacket;
+import net.minecraft.network.packet.s2c.play.UnloadChunkS2CPacket;
 import net.minecraft.network.packet.s2c.play.ScreenHandlerPropertyUpdateS2CPacket;
 import net.minecraft.network.packet.s2c.play.ScreenHandlerSlotUpdateS2CPacket;
 import net.minecraft.network.packet.s2c.play.WorldTimeUpdateS2CPacket;
@@ -56,7 +61,8 @@ public final class PacketNames {
 
     /** Pacotes de alto volume que poluem a captura (não interessam ao teste comum). */
     public static boolean isNoise(Packet<?> p) {
-        return p instanceof EntityS2CPacket                 // movimento relativo (base + subclasses)
+        return p instanceof BlockBreakingProgressS2CPacket  // rachadura de bloco (flood pesado em SMPs)
+                || p instanceof EntityS2CPacket             // movimento relativo (base + subclasses)
                 || p instanceof EntityPositionS2CPacket
                 || p instanceof EntityPositionSyncS2CPacket
                 || p instanceof EntitySetHeadYawS2CPacket
@@ -72,9 +78,13 @@ public final class PacketNames {
                 || p instanceof WorldTimeUpdateS2CPacket
                 || p instanceof PlayerListS2CPacket
                 || p instanceof PlayerListHeaderS2CPacket
+                || p instanceof BossBarS2CPacket
+                || p instanceof UnloadChunkS2CPacket
+                || p instanceof EntityPassengersSetS2CPacket
                 || p instanceof KeepAliveS2CPacket
                 || p instanceof CommonPingS2CPacket
                 || p instanceof PlayerMoveC2SPacket
+                || p instanceof ClientTickEndC2SPacket
                 || p instanceof KeepAliveC2SPacket
                 || p instanceof CommonPongC2SPacket;
     }

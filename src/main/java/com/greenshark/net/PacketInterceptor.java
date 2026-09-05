@@ -29,30 +29,22 @@ public class PacketInterceptor extends ChannelDuplexHandler {
     /** Segurar pacotes enviados (cliente -> servidor). */
     public static volatile boolean interceptOutbound = false;
 
-    /** Não capturar (nem segurar) pacotes de alto volume (movimento, chunk, tempo…). */
-    public static volatile boolean dropNoise = true;
+    /** Modo de captura: 0 = tudo, 1 = sem ruído (padrão), 2 = só relevantes. */
+    public static volatile int captureMode = 1;
+    public static final int MODE_ALL = 0;
+    public static final int MODE_NO_NOISE = 1;
+    public static final int MODE_ONLY_RELEVANT = 2;
 
-    /** DIAGNÓSTICO TEMPORÁRIO: histograma de todos os pacotes vistos (antes de filtrar). */
-    private static final java.util.concurrent.ConcurrentHashMap<String, java.util.concurrent.atomic.AtomicLong> HIST =
-            new java.util.concurrent.ConcurrentHashMap<>();
-    private static final java.util.concurrent.atomic.AtomicLong TOTAL = new java.util.concurrent.atomic.AtomicLong();
-
-    private static void tally(Packet<?> p) {
-        String friendly = null;
-        try {
-            friendly = com.greenshark.inspect.PacketNames.friendly(p);
-        } catch (Throwable ignored) {
-        }
-        String key = (friendly != null ? friendly + "  " : "") + p.getClass().getName();
-        HIST.computeIfAbsent(key, k -> new java.util.concurrent.atomic.AtomicLong()).incrementAndGet();
-        long t = TOTAL.incrementAndGet();
-        if (t % 3000 == 0) {
-            String top = HIST.entrySet().stream()
-                    .sorted((a, b) -> Long.compare(b.getValue().get(), a.getValue().get()))
-                    .limit(18)
-                    .map(e -> String.format("%7d  %s", e.getValue().get(), e.getKey()))
-                    .reduce((a, b) -> a + "\n  " + b).orElse("(vazio)");
-            GreenSharkClient.LOGGER.info("[GreenShark][hist] TOP pacotes (total visto={}):\n  {}", t, top);
+    /** Decide se o pacote deve ser capturado (e elegível a intercept), conforme o modo. */
+    private static boolean shouldCapture(Packet<?> p) {
+        switch (captureMode) {
+            case MODE_ALL:
+                return true;
+            case MODE_ONLY_RELEVANT:
+                return com.greenshark.inspect.PacketNames.friendly(p) != null;
+            case MODE_NO_NOISE:
+            default:
+                return !com.greenshark.inspect.PacketNames.isNoise(p);
         }
     }
 
@@ -70,10 +62,7 @@ public class PacketInterceptor extends ChannelDuplexHandler {
 
     @Override
     public void channelRead(ChannelHandlerContext ctx, Object msg) throws Exception {
-        if (msg instanceof Packet<?> pk) {
-            tally(pk);
-        }
-        if (msg instanceof Packet<?> packet && !(dropNoise && com.greenshark.inspect.PacketNames.isNoise(packet))) {
+        if (msg instanceof Packet<?> packet && shouldCapture(packet)) {
             try {
                 long id = PacketLog.INSTANCE.nextId();
                 PacketLog.INSTANCE.add(new CapturedPacket(id, Direction.CLIENTBOUND, packet));
@@ -90,10 +79,7 @@ public class PacketInterceptor extends ChannelDuplexHandler {
 
     @Override
     public void write(ChannelHandlerContext ctx, Object msg, ChannelPromise promise) throws Exception {
-        if (msg instanceof Packet<?> pk) {
-            tally(pk);
-        }
-        if (msg instanceof Packet<?> packet && !(dropNoise && com.greenshark.inspect.PacketNames.isNoise(packet))) {
+        if (msg instanceof Packet<?> packet && shouldCapture(packet)) {
             try {
                 long id = PacketLog.INSTANCE.nextId();
                 PacketLog.INSTANCE.add(new CapturedPacket(id, Direction.SERVERBOUND, packet));

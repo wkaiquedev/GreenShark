@@ -92,12 +92,12 @@ public class InterceptorScreen extends Screen {
                         })
                 .dimensions(392, y, 58, 20).build());
         addDrawableChild(ButtonWidget.builder(
-                        Text.literal(PacketInterceptor.dropNoise ? "Ruído: §7oculto" : "Ruído: §avisível"),
+                        Text.literal("Modo: " + modeLabel()),
                         b -> {
-                            PacketInterceptor.dropNoise = !PacketInterceptor.dropNoise;
+                            PacketInterceptor.captureMode = (PacketInterceptor.captureMode + 1) % 3;
                             clearAndInit();
                         })
-                .dimensions(454, y, 110, 20).build());
+                .dimensions(454, y, 130, 20).build());
 
         filterField = new TextFieldWidget(this.textRenderer, listX(), listTop() - 18, listW(), 14,
                 Text.literal("filtro"));
@@ -109,11 +109,13 @@ public class InterceptorScreen extends Screen {
         // Ações do pacote selecionado (lado direito, base).
         int rx = this.width / 2 + 8;
         int rw = this.width - rx - 8;
-        int half = (rw - 6) / 2;
-        addDrawableChild(ButtonWidget.builder(Text.literal("Repetir (replay)"), b -> doReplay())
-                .dimensions(rx, this.height - 34, half, 20).build());
-        addDrawableChild(ButtonWidget.builder(Text.literal("Editar & enviar"), b -> doEdit())
-                .dimensions(rx + half + 6, this.height - 34, half, 20).build());
+        int third = (rw - 12) / 3;
+        addDrawableChild(ButtonWidget.builder(Text.literal("Repetir"), b -> doReplay())
+                .dimensions(rx, this.height - 34, third, 20).build());
+        addDrawableChild(ButtonWidget.builder(Text.literal("Repetir §c20×"), b -> doReplay20())
+                .dimensions(rx + third + 6, this.height - 34, third, 20).build());
+        addDrawableChild(ButtonWidget.builder(Text.literal("Editar"), b -> doEdit())
+                .dimensions(rx + 2 * (third + 6), this.height - 34, third, 20).build());
 
         // Controles de pacote segurado (intercept).
         HeldPacket held = InterceptQueue.INSTANCE.peek();
@@ -144,6 +146,17 @@ public class InterceptorScreen extends Screen {
 
     private String onoff(boolean b) {
         return b ? "§aON" : "§7OFF";
+    }
+
+    private String modeLabel() {
+        switch (PacketInterceptor.captureMode) {
+            case PacketInterceptor.MODE_ALL:
+                return "§fTudo";
+            case PacketInterceptor.MODE_ONLY_RELEVANT:
+                return "§aSó relevantes";
+            default:
+                return "§7Sem ruído";
+        }
     }
 
     private List<CapturedPacket> computeView() {
@@ -181,18 +194,33 @@ public class InterceptorScreen extends Screen {
         toast(ok ? "Replay enviado: " + p.name : "§cFalha no replay (sem conexão).");
     }
 
+    private void doReplay20() {
+        CapturedPacket p = selected();
+        if (p == null) {
+            toast("§7Selecione um pacote primeiro.");
+            return;
+        }
+        boolean ok = PacketActions.replayTimes(p, 20);
+        toast(ok ? "Replay 20× enviado: " + p.name : "§cFalha no replay (sem conexão).");
+    }
+
     private void doEdit() {
         CapturedPacket p = selected();
         if (p == null) {
             toast("§7Selecione um pacote primeiro.");
             return;
         }
-        this.client.setScreen(new FieldEditScreen(this, p.packet, p.direction, "Salvar & enviar", edited -> {
+        java.util.function.Consumer<net.minecraft.network.packet.Packet<?>> onApply = edited -> {
             boolean ok = p.direction == Direction.SERVERBOUND
                     ? PacketActions.replayServerbound(edited)
                     : PacketActions.replayClientbound(edited);
             toast(ok ? "Pacote editado enviado." : "§cFalha ao enviar.");
-        }));
+        };
+        if (p.packet instanceof net.minecraft.network.packet.c2s.play.ClickSlotC2SPacket cs) {
+            this.client.setScreen(new ClickSlotEditScreen(this, cs, "Salvar & enviar", onApply));
+        } else {
+            this.client.setScreen(new FieldEditScreen(this, p.packet, p.direction, "Salvar & enviar", onApply));
+        }
     }
 
     private void editHeld() {
@@ -200,13 +228,18 @@ public class InterceptorScreen extends Screen {
         if (held == null) {
             return;
         }
-        this.client.setScreen(new FieldEditScreen(this, held.packet, held.direction, "Salvar & encaminhar", edited -> {
+        java.util.function.Consumer<net.minecraft.network.packet.Packet<?>> onApply = edited -> {
             HeldPacket h = InterceptQueue.INSTANCE.poll();
             if (h != null) {
                 h.packet = edited;
                 h.forward();
             }
-        }));
+        };
+        if (held.packet instanceof net.minecraft.network.packet.c2s.play.ClickSlotC2SPacket cs) {
+            this.client.setScreen(new ClickSlotEditScreen(this, cs, "Salvar & encaminhar", onApply));
+        } else {
+            this.client.setScreen(new FieldEditScreen(this, held.packet, held.direction, "Salvar & encaminhar", onApply));
+        }
     }
 
     private void toast(String s) {

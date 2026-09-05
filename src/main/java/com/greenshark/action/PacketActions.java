@@ -62,4 +62,22 @@ public final class PacketActions {
                 ? replayServerbound(cp.packet)
                 : replayClientbound(cp.packet);
     }
+
+    /** Reenvia o mesmo pacote N vezes o mais rápido possível (teste de race/double-submit). */
+    public static boolean replayTimes(CapturedPacket cp, int times) {
+        boolean ok = true;
+        for (int i = 0; i < times; i++) {
+            ok = replay(cp) && ok;
+        }
+        return ok;
+    }
+
+    /** Reenvia um pacote já editado N vezes (usado pelo editor). */
+    public static boolean replayTimes(Packet<?> packet, Direction dir, int times) {
+        boolean ok = true;
+        for (int i = 0; i < times; i++) {
+            ok = (dir == Direction.SERVERBOUND ? replayServerbound(packet) : replayClientbound(packet)) && ok;
+        }
+        return ok;
+    }
 }
